@@ -2,11 +2,14 @@ const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, generateWAMessageFromContent, proto } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const QRCode = require('qrcode-terminal');
+const QrImage = require('qrcode');
 
 const app = express();
 const port = 3000;
 
 let sock;
+let currentQR;
+let isConnected = false;
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -20,10 +23,13 @@ async function connectToWhatsApp() {
     newSock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         if (qr) {
+            currentQR = qr;
             console.log('Scan the QR code below:');
             QRCode.generate(qr, { small: true });
         }
         if (connection === 'close') {
+            isConnected = false;
+            currentQR = null; // Clear QR on close/disconnect, logic will generate new one if needed
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed due to ', lastDisconnect.error, ', reconnecting ', shouldReconnect);
             if (shouldReconnect) {
@@ -32,6 +38,8 @@ async function connectToWhatsApp() {
             }
         } else if (connection === 'open') {
             console.log('Opened connection to WhatsApp!');
+            isConnected = true;
+            currentQR = null;
             sock = newSock;
         }
     });
@@ -66,6 +74,36 @@ app.get('/send-otp', async (req, res) => {
         res.status(500).json({ error: 'Failed to send message', details: err.toString() });
     }
 });
+
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
+app.get('/qr', async (req, res) => {
+    if (isConnected) {
+        return res.send('<html><body><h1>Connected</h1></body></html>');
+    }
+    if (currentQR) {
+        try {
+            const url = await QrImage.toDataURL(currentQR);
+            return res.send(`<html><body><h1>Scan QR Code</h1><img src="${url}"/></body></html>`);
+        } catch (err) {
+            return res.status(500).send('Error generating QR');
+        }
+    }
+    return res.send('<html><body><h1>Initializing... or No QR available yet</h1></body></html>');
+});
+
+// Keep-alive mechanism for Render
+const RENDER_EXTERNAL_URL = 'https://wa-simple-otp.onrender.com';
+if (RENDER_EXTERNAL_URL) {
+    setInterval(() => {
+        // Use global fetch (available in Node.js 18+)
+        fetch(`${RENDER_EXTERNAL_URL}/health`)
+            .then(res => console.log(`Keep-alive ping status: ${res.status}`))
+            .catch(err => console.error(`Keep-alive ping failed: ${err.message}`));
+    }, 1 * 60 * 1000); // Ping every 1 minutes
+}
 
 app.listen(port, () => {
     console.log(`Server listening at http://localhost:${port}`);
