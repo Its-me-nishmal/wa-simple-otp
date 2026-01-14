@@ -136,7 +136,7 @@ app.get('/send-image', async (req, res) => {
             });
 
             // Wait a bit for any animations/rendering
-            await page.waitForTimeout(2000);
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
             // Take screenshot
             imageBuffer = await page.screenshot({
@@ -180,7 +180,7 @@ app.get('/send-image', async (req, res) => {
             const page = await browser.newPage();
             await page.setViewport({ width: 1920, height: 1080 });
             await page.goto(imageUrl, { waitUntil: 'networkidle0', timeout: 30000 });
-            await page.waitForTimeout(2000);
+            await new Promise(resolve => setTimeout(resolve, 2000));
             imageBuffer = await page.screenshot({ type: 'png', fullPage: true });
 
             await browser.close();
