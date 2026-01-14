@@ -90,15 +90,38 @@ app.get('/send-image', async (req, res) => {
     const jid = mobile.replace(/\D/g, '') + '@s.whatsapp.net';
 
     try {
-        // Fetch the image from the URL
-        const response = await fetch(imageUrl);
+        console.log(`Fetching image from: ${imageUrl}`);
+
+        // Fetch the image from the URL with proper headers
+        const response = await fetch(imageUrl, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'image/*, */*'
+            }
+        });
 
         if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.statusText}`);
+            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        }
+
+        // Check content type
+        const contentType = response.headers.get('content-type');
+        console.log(`Image content-type: ${contentType}`);
+
+        // Validate that we got an image (or allow if content-type is not set)
+        if (contentType && !contentType.startsWith('image/')) {
+            throw new Error(`Invalid content-type: ${contentType}. Expected image/*`);
         }
 
         // Get the image buffer
         const imageBuffer = Buffer.from(await response.arrayBuffer());
+
+        // Validate buffer size
+        if (imageBuffer.length === 0) {
+            throw new Error('Received empty image data');
+        }
+
+        console.log(`Image size: ${imageBuffer.length} bytes`);
 
         // Prepare message object
         const messageOptions = {
@@ -113,10 +136,14 @@ app.get('/send-image', async (req, res) => {
         // Send the image
         await sock.sendMessage(jid, messageOptions);
 
+        console.log(`Image sent successfully to ${jid}`);
+
         res.json({
             success: true,
             message: 'Image sent successfully',
-            hasCaption: !!caption
+            hasCaption: !!caption,
+            imageSize: imageBuffer.length,
+            contentType: contentType
         });
     } catch (err) {
         console.error('Error sending image:', err);
