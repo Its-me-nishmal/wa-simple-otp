@@ -11,10 +11,11 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@sparticuz/chromium": "^143.0.4",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
     "express": "^5.2.1",
     "pino": "^10.1.0",
-    "puppeteer": "^24.35.0",
+    "puppeteer-core": "^24.35.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0"
   }

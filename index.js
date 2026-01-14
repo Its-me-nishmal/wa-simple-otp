@@ -3,7 +3,8 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, generate
 const pino = require('pino');
 const QRCode = require('qrcode-terminal');
 const QrImage = require('qrcode');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 
 const app = express();
 const port = 3000;
