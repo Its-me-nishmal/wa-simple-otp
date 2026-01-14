@@ -118,8 +118,10 @@ app.get('/send-image', async (req, res) => {
 
             // Launch headless browser
             browser = await puppeteer.launch({
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: chromium.headless
             });
 
             const page = await browser.newPage();
@@ -169,8 +171,10 @@ app.get('/send-image', async (req, res) => {
             method = 'puppeteer-fallback';
 
             browser = await puppeteer.launch({
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox']
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: chromium.headless
             });
 
             const page = await browser.newPage();
