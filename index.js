@@ -5,6 +5,8 @@ const QRCode = require('qrcode-terminal');
 const QrImage = require('qrcode');
 const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
+const { createCanvas, loadImage } = require('canvas');
+const path = require('path');
 
 const app = express();
 const port = 3000;
@@ -178,7 +180,7 @@ app.get('/send-image', async (req, res) => {
             });
 
             const page = await browser.newPage();
-            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setViewport({ width: 1200, height: 1550 });
             await page.goto(imageUrl, { waitUntil: 'networkidle0', timeout: 30000 });
             await new Promise(resolve => setTimeout(resolve, 2000));
             imageBuffer = await page.screenshot({ type: 'png', fullPage: true });
@@ -231,6 +233,105 @@ app.get('/send-image', async (req, res) => {
 
         res.status(500).json({
             error: 'Failed to send image',
+            details: err.toString()
+        });
+    }
+});
+
+// Convenience endpoint for MYL poster generation using Canvas (FAST!)
+app.get('/send-myl', async (req, res) => {
+    const { name, quantity, amount, mobile, caption } = req.query;
+
+    if (!sock) {
+        return res.status(503).json({ error: 'WhatsApp client not ready' });
+    }
+
+    if (!name || !mobile) {
+        return res.status(400).json({ error: 'Missing required parameters: name and mobile' });
+    }
+
+    // Default values
+    const qty = quantity || '1';
+    const amt = amount || '350';
+
+    try {
+        console.log(`MYL Poster request - Name: ${name}, Qty: ${qty}, Amount: ${amt}, Mobile: ${mobile}`);
+
+        // Create canvas - same dimensions as your React code
+        const canvas = createCanvas(1200, 1550);
+        const ctx = canvas.getContext('2d');
+
+        // Load the receipt background image
+        console.log('Loading receipt background image...');
+        const imgPath = path.join(__dirname, 'recipt.jpeg');
+        const img = await loadImage(imgPath);
+
+        // Draw the background image
+        ctx.drawImage(img, 0, 0, 1200, 1550);
+
+        // Set text style (same as your React code)
+        ctx.fillStyle = '#751d08';
+        ctx.textBaseline = 'middle';
+
+        // Area 1: Name - exactly as your React code
+        const nameX = 201;
+        const nameY = 528 + ((583 - 528) / 2);
+        ctx.font = 'bold 28px Arial, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(name.toUpperCase(), nameX, nameY);
+
+        // Area 2: Quantity - exactly as your React code
+        const qtyX = 774;
+        const qtyY = 765 + ((802 - 765) / 2) + 10;
+        ctx.font = 'bold 24px Arial, sans-serif';
+        ctx.fillText(String(qty), qtyX, qtyY);
+
+        // Area 3: Amount - exactly as your React code
+        const amtX = 754;
+        const amtY = 821 + ((855 - 821) / 2) + 10;
+        ctx.fillText(`₹${amt}`, amtX, amtY);
+
+        // Convert to JPEG buffer
+        const imageBuffer = canvas.toBuffer('image/jpeg', { quality: 0.9 });
+
+        console.log(`Image generated with canvas: ${imageBuffer.length} bytes (FAST!)`);
+
+        // Basic cleanup of phone number
+        const jid = mobile.replace(/\D/g, '') + '@s.whatsapp.net';
+
+        // Prepare message object
+        const messageOptions = {
+            image: imageBuffer
+        };
+
+        // Add caption if provided
+        if (caption) {
+            messageOptions.caption = caption;
+        }
+
+        // Send the image
+        await sock.sendMessage(jid, messageOptions);
+
+        console.log(`MYL poster sent successfully to ${jid}`);
+
+        res.json({
+            success: true,
+            message: 'MYL poster sent successfully (canvas-generated)',
+            details: {
+                name: name,
+                quantity: qty,
+                amount: amt,
+                hasCaption: !!caption,
+                imageSize: imageBuffer.length,
+                method: 'canvas-direct'
+            }
+        });
+
+    } catch (err) {
+        console.error('Error sending MYL poster:', err);
+
+        res.status(500).json({
+            error: 'Failed to send MYL poster',
             details: err.toString()
         });
     }

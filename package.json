@@ -13,6 +13,7 @@
   "dependencies": {
     "@sparticuz/chromium": "^143.0.4",
     "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "canvas": "^3.2.1",
     "express": "^5.2.1",
     "pino": "^10.1.0",
     "puppeteer-core": "^24.35.0",
