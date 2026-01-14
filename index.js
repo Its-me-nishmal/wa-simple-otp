@@ -75,6 +75,58 @@ app.get('/send-otp', async (req, res) => {
     }
 });
 
+app.get('/send-image', async (req, res) => {
+    const { imageUrl, mobile, caption } = req.query;
+
+    if (!sock) {
+        return res.status(503).json({ error: 'WhatsApp client not ready' });
+    }
+
+    if (!imageUrl || !mobile) {
+        return res.status(400).json({ error: 'Missing imageUrl or mobile parameter' });
+    }
+
+    // Basic cleanup of phone number
+    const jid = mobile.replace(/\D/g, '') + '@s.whatsapp.net';
+
+    try {
+        // Fetch the image from the URL
+        const response = await fetch(imageUrl);
+
+        if (!response.ok) {
+            throw new Error(`Failed to fetch image: ${response.statusText}`);
+        }
+
+        // Get the image buffer
+        const imageBuffer = Buffer.from(await response.arrayBuffer());
+
+        // Prepare message object
+        const messageOptions = {
+            image: imageBuffer
+        };
+
+        // Add caption if provided
+        if (caption) {
+            messageOptions.caption = caption;
+        }
+
+        // Send the image
+        await sock.sendMessage(jid, messageOptions);
+
+        res.json({
+            success: true,
+            message: 'Image sent successfully',
+            hasCaption: !!caption
+        });
+    } catch (err) {
+        console.error('Error sending image:', err);
+        res.status(500).json({
+            error: 'Failed to send image',
+            details: err.toString()
+        });
+    }
+});
+
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
 });
