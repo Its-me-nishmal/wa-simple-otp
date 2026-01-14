@@ -3,6 +3,7 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, generate
 const pino = require('pino');
 const QRCode = require('qrcode-terminal');
 const QrImage = require('qrcode');
+const puppeteer = require('puppeteer');
 
 const app = express();
 const port = 3000;
@@ -89,39 +90,104 @@ app.get('/send-image', async (req, res) => {
     // Basic cleanup of phone number
     const jid = mobile.replace(/\D/g, '') + '@s.whatsapp.net';
 
+    let browser = null;
+
     try {
         console.log(`Fetching image from: ${imageUrl}`);
 
-        // Fetch the image from the URL with proper headers
-        const response = await fetch(imageUrl, {
+        // First, check what content type the URL returns
+        const headResponse = await fetch(imageUrl, {
+            method: 'HEAD',
             headers: {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                'Accept': 'image/*, */*'
+                'Accept': 'image/*, text/html, */*'
             }
         });
 
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        const contentType = headResponse.headers.get('content-type');
+        console.log(`URL content-type: ${contentType}`);
+
+        let imageBuffer;
+        let method = 'unknown';
+
+        // If content-type is HTML, use puppeteer to render and capture
+        if (contentType && (contentType.includes('text/html') || contentType.includes('application/xhtml'))) {
+            console.log('Detected HTML page - using puppeteer to capture rendered image');
+            method = 'puppeteer';
+
+            // Launch headless browser
+            browser = await puppeteer.launch({
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+
+            const page = await browser.newPage();
+
+            // Set viewport
+            await page.setViewport({ width: 1920, height: 1080 });
+
+            // Navigate to the URL and wait for network to be idle
+            await page.goto(imageUrl, {
+                waitUntil: 'networkidle0',
+                timeout: 30000
+            });
+
+            // Wait a bit for any animations/rendering
+            await page.waitForTimeout(2000);
+
+            // Take screenshot
+            imageBuffer = await page.screenshot({
+                type: 'png',
+                fullPage: true
+            });
+
+            await browser.close();
+            browser = null;
+
+        } else if (contentType && contentType.startsWith('image/')) {
+            // Direct image - fetch normally
+            console.log('Detected direct image - fetching normally');
+            method = 'direct';
+
+            const response = await fetch(imageUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'image/*, */*'
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+            }
+
+            imageBuffer = Buffer.from(await response.arrayBuffer());
+
+        } else {
+            // Unknown content type - try puppeteer as fallback
+            console.log(`Unknown content-type: ${contentType} - trying puppeteer as fallback`);
+            method = 'puppeteer-fallback';
+
+            browser = await puppeteer.launch({
+                headless: true,
+                args: ['--no-sandbox', '--disable-setuid-sandbox']
+            });
+
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.goto(imageUrl, { waitUntil: 'networkidle0', timeout: 30000 });
+            await page.waitForTimeout(2000);
+            imageBuffer = await page.screenshot({ type: 'png', fullPage: true });
+
+            await browser.close();
+            browser = null;
         }
-
-        // Check content type
-        const contentType = response.headers.get('content-type');
-        console.log(`Image content-type: ${contentType}`);
-
-        // Validate that we got an image (or allow if content-type is not set)
-        if (contentType && !contentType.startsWith('image/')) {
-            throw new Error(`Invalid content-type: ${contentType}. Expected image/*`);
-        }
-
-        // Get the image buffer
-        const imageBuffer = Buffer.from(await response.arrayBuffer());
 
         // Validate buffer size
         if (imageBuffer.length === 0) {
             throw new Error('Received empty image data');
         }
 
-        console.log(`Image size: ${imageBuffer.length} bytes`);
+        console.log(`Image size: ${imageBuffer.length} bytes (method: ${method})`);
 
         // Prepare message object
         const messageOptions = {
@@ -143,10 +209,21 @@ app.get('/send-image', async (req, res) => {
             message: 'Image sent successfully',
             hasCaption: !!caption,
             imageSize: imageBuffer.length,
-            contentType: contentType
+            contentType: contentType,
+            method: method
         });
     } catch (err) {
         console.error('Error sending image:', err);
+
+        // Clean up browser if it's still open
+        if (browser) {
+            try {
+                await browser.close();
+            } catch (closeErr) {
+                console.error('Error closing browser:', closeErr);
+            }
+        }
+
         res.status(500).json({
             error: 'Failed to send image',
             details: err.toString()
