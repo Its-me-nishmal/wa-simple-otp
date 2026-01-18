@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, generateWAMessageFromContent, proto } = require('@whiskeysockets/baileys');
 const pino = require('pino');
@@ -7,9 +8,14 @@ const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 const { createCanvas, loadImage } = require('canvas');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const port = 3000;
+
+// Middleware to parse JSON (for webhooks)
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 let sock;
 let currentQR;
@@ -250,92 +256,74 @@ app.get('/send-myl', async (req, res) => {
         return res.status(400).json({ error: 'Missing required parameters: name and mobile' });
     }
 
-    // Default values
-    const qty = quantity || '1';
-    const amt = amount || '350';
+    const qty = Number(quantity || 1);
+    const amt = Number(amount || (qty * 350));
 
     try {
-        console.log(`MYL Poster request - Name: ${name}, Qty: ${qty}, Amount: ${amt}, Mobile: ${mobile}`);
-
-        // Create canvas - same dimensions as your React code
         const canvas = createCanvas(1200, 1550);
         const ctx = canvas.getContext('2d');
 
-        // Load the receipt background image
-        console.log('Loading receipt background image...');
-        const imgPath = path.join(__dirname, 'recipt.jpeg');
-        const img = await loadImage(imgPath);
-
-        // Draw the background image
+        // Background image
+        const img = await loadImage(path.join(__dirname, 'recipt.jpeg'));
         ctx.drawImage(img, 0, 0, 1200, 1550);
 
-        // Set text style (same as your React code)
-        ctx.fillStyle = '#751d08';
         ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
 
-        // Area 1: Name - exactly as your React code
+        /* ---------- NAME (33px) ---------- */
+        ctx.fillStyle = '#751d08';
+        ctx.font = 'bold 33px sans-serif';
         const nameX = 201;
         const nameY = 528 + ((583 - 528) / 2);
-        ctx.font = 'bold 28px Arial, sans-serif';
-        ctx.textAlign = 'left';
         ctx.fillText(name.toUpperCase(), nameX, nameY);
 
-        // Area 2: Quantity - exactly as your React code
+        /* ---------- QUANTITY (30px) ---------- */
+        ctx.fillStyle = '#000000';
+        ctx.font = 'bold 30px sans-serif';
         const qtyX = 774;
         const qtyY = 765 + ((802 - 765) / 2) + 10;
-        ctx.font = 'bold 24px Arial, sans-serif';
         ctx.fillText(String(qty), qtyX, qtyY);
 
-        // Area 3: Amount - exactly as your React code
+        /* ---------- AMOUNT (30px) ---------- */
         const amtX = 754;
         const amtY = 821 + ((855 - 821) / 2) + 10;
         ctx.fillText(`₹${amt}`, amtX, amtY);
 
-        // Convert to JPEG buffer
+        /* ---------- WATERMARK ---------- */
+        ctx.font = 'italic 18px sans-serif';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.textAlign = 'center';
+
+        const watermarkText = `Generated on ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
+        ctx.fillText(watermarkText, canvas.width / 2, canvas.height - 30);
+
+        /* ---------- IMAGE BUFFER ---------- */
         const imageBuffer = canvas.toBuffer('image/jpeg', { quality: 0.9 });
 
-        console.log(`Image generated with canvas: ${imageBuffer.length} bytes (FAST!)`);
-
-        // Basic cleanup of phone number
+        /* ---------- SEND WHATSAPP ---------- */
         const jid = mobile.replace(/\D/g, '') + '@s.whatsapp.net';
+        const message = { image: imageBuffer };
+        if (caption) message.caption = caption;
 
-        // Prepare message object
-        const messageOptions = {
-            image: imageBuffer
-        };
-
-        // Add caption if provided
-        if (caption) {
-            messageOptions.caption = caption;
-        }
-
-        // Send the image
-        await sock.sendMessage(jid, messageOptions);
-
-        console.log(`MYL poster sent successfully to ${jid}`);
+        await sock.sendMessage(jid, message);
 
         res.json({
             success: true,
-            message: 'MYL poster sent successfully (canvas-generated)',
-            details: {
-                name: name,
-                quantity: qty,
-                amount: amt,
-                hasCaption: !!caption,
-                imageSize: imageBuffer.length,
-                method: 'canvas-direct'
-            }
+            name,
+            quantity: qty,
+            amount: amt,
+            imageSize: imageBuffer.length,
+            watermark: true
         });
 
     } catch (err) {
-        console.error('Error sending MYL poster:', err);
-
         res.status(500).json({
             error: 'Failed to send MYL poster',
             details: err.toString()
         });
     }
 });
+
 
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
