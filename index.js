@@ -13,6 +13,7 @@ const crypto = require('crypto');
 const app = express();
 const port = 3000;
 
+
 // Middleware to parse JSON (for webhooks)
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -293,7 +294,7 @@ app.get('/send-myl', async (req, res) => {
         ctx.font = 'italic 18px sans-serif';
         ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
         ctx.textAlign = 'center';
-        
+
 
         const watermarkText = `Generated on ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
         ctx.fillText(watermarkText, canvas.width / 2, canvas.height - 30);
